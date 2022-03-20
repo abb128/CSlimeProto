@@ -73,26 +73,45 @@ void send_handshake(){
 	printf("Sent handshake packet\n");
 }
 
+void recv_handshake_init_r(){
+	x_recv();
+	
+	SlimeBarePacket<SlimeHandshakeInitResponse> *response = (SlimeBarePacket<SlimeHandshakeInitResponse>*)buffer;
+	if(response->handle != SLIME_HANDLE_HANDSHAKE_INIT_R){
+		goto error;
+	}
+	
+	if(response->data.magic != SLIME_HANDSHAKE_RESPONSE_MAGIC){
+		goto error;
+	}
+	
+	return;
+	
+error:
+	printf("Fail!!!!\n");
+	exit(EXIT_FAILURE);
+}
+
+void recv_handshake(){
+	x_recv();
+	SlimeBarePacket<SlimeHandshakeResponse> *response = (SlimeBarePacket<SlimeHandshakeResponse>*)buffer;
+	if(response->handle == SLIME_HANDLE_HANDSHAKE_R){
+		printf("Handshook successfully :)\n");
+		return;
+	}
+	
+	printf("Fail handshake response!!\n");
+	exit(EXIT_FAILURE);
+}
+
 int main(){
 	x_init();
 	
 	send_handshake_init();
-	
-	usleep(200 * 1000);
+	recv_handshake_init_r();
 	
 	send_handshake();
-	
-	x_recv();
-	
-	SlimeBarePacket<SlimeHandshakeResponse> *response = (SlimeBarePacket<SlimeHandshakeResponse>*)buffer;
-	printf("Buffer: %d\n", response->handle);
-	printf("Magic value: %d\n", response->data.magic);
-	
-	if(response->data.magic == SLIME_HANDSHAKE_RESPONSE_MAGIC){
-		printf("All OK :)\n");
-	}else{
-		printf("Fail!!!!\n");
-	}
+	recv_handshake();
 	
 	x_finish();
 	
