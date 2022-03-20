@@ -1,0 +1,205 @@
+///@Enum8
+typedef enum SlimeReservedHandle {
+    SLIME_HANDLE_HANDSHAKE_INIT = 1,
+    SLIME_HANDLE_HANDSHAKE = 2,
+    SLIME_HANDLE_HANDSHAKE_R = 3,
+    SLIME_HANDLE_CMD_DESC = 4,
+    SLIME_HANDLE_CMD_DESC_R = 5,
+    SLIME_HANDLE_PACKET_ACK = 6,
+
+    //SLIME_HANDLE_PACKET_NUMBER_ROLLOVER = 7
+} SlimeReservedHandle;
+
+///@Enum32
+typedef enum SlimeReliabilityBits {
+    /// acknowledgements should be sent in response to commands that
+    /// have `SLIME_COMMAND_ACKNOWLEDGE` flag enabled
+    SLIME_RELIABILITY_ACK = 1,
+
+    /// ordering of packets should be read and checked in commands that
+    /// have `SLIME_COMMAND_ORDERED` flag enabled
+    SLIME_RELIABILITY_ORDERING = 2
+} SlimeReliabilityBits;
+
+///@Enum32
+typedef enum SlimeCommandFlagBits {
+    // The client may send this command to the server
+    SLIME_COMMAND_CLIENT_SENDS = 1,
+
+    // The server may send this command to the client
+    SLIME_COMMAND_SERVER_SENDS = 2,
+
+    // If `SLIME_RELIABILITY_ORDERING` is active, the packet will include
+    // a number, and out-of-order packets should be ignored.
+    SLIME_COMMAND_ORDERED = 4,
+
+    // If `SLIME_RELIABILITY_ACK` is active, the packet will include a
+    // number, and the other end must send a command acknowledging
+    // receipt, otherwise the packet shall be resent.
+    SLIME_COMMAND_ACKNOWLEDGE = 8
+} SlimeCommandFlagBits;
+
+
+///@Enum32
+typedef enum SlimeCommandDescriptorStatus {
+    /// Indicates that an error has occurred (TODO)
+    SLIME_COMMAND_ACK_ERROR = 0,
+
+    /// Indicates that the command has been understood and may be used
+    /// from now on
+    SLIME_COMMAND_ACK_OK = 1,
+
+    /// Indicates that the descriptor was received, but the server doesn't
+    /// support this command and it should not be used. The associated
+    /// handle may be re-used to send a different descriptor.
+    SLIME_COMMAND_ACK_UNKNOWN = 2
+} SlimeCommandDescriptorStatus;
+
+
+/// This is the first packet sent by the client. This is intended for the
+/// server to detect endianness mode and ensure it is decoding packets
+/// correctly.
+
+///@DefaultCommand
+///.handle = SLIME_HANDLE_HANDSHAKE_INIT
+///.flags = SLIME_COMMAND_CLIENT_SENDS
+typedef struct SLIME_PACKED SlimeHandshakeInit {
+    /// Should be set to SLIME_HANDSHAKE_INIT_UUID
+    SlimeUUID magic_uuid;
+
+    /// Should be set to SLIME_HANDSHAKE_INIT_INT
+    uint32_t magic_int;
+
+    /// Should be set to SLIME_HANDSHAKE_INIT_SHORT
+    uint16_t magic_short;
+
+    /// Should be set to SLIME_HANDSHAKE_INIT_BYTE
+    uint8_t  magic_byte;
+} SlimeHandshakeInit;
+
+/// Value of SlimeHandshakeInit.magic_int
+const uint32_t SLIME_HANDSHAKE_INIT_INT   = 3265741128;
+/// Value of SlimeHandshakeInit.magic_short
+const uint16_t SLIME_HANDSHAKE_INIT_SHORT = 11359;
+/// Value of SlimeHandshakeInit.magic_byte
+const uint8_t  SLIME_HANDSHAKE_INIT_BYTE  = 181;
+
+
+/// Value of SlimeHandshakeInit.magic_uuid (92b40922-095c-4e37-9a42-f24d73ee3ae9)
+const SlimeUUID SLIME_HANDSHAKE_INIT_UUID = SlimeUUID { 0x92, 0xb4, 0x09, 0x22,    0x09, 0x5c,    0x4e, 0x37,    0x9a, 0x42,    0xf2, 0x4d, 0x73, 0xee, 0x3a, 0xe9 };
+
+
+/// This is the second packet sent by the client. If this packet is received
+/// in the middle of a connection, the server should clear its internal
+/// connection data (such as the handle→command map) and start all over again.
+
+///@DefaultCommand
+///.handle = SLIME_HANDLE_HANDSHAKE
+///.flags = SLIME_COMMAND_CLIENT_SENDS
+typedef struct SLIME_PACKED SlimeHandshake {
+    // TODO: This packet is kinda big
+
+    /// Should be set to 1.
+    uint32_t protocol_version;
+    
+    /// The client's installed firmware type and version.
+    SlimeUUID firmware;
+
+    /// Identifier for the hardware kind and revision.
+    SlimeUUID hardware;
+
+    /// Random unique identifier, different per each tracker.
+    SlimeUUID hw_uid;
+
+    /// Level of reliability the protocol should ensure.
+    /// For example, TCP communication is reliable enough to set this to 0,
+    /// while UDP communication should have all bits enabled.
+    SlimeReliabilityBits reliability;
+} SlimeHandshake;
+
+
+
+/// Sent by the server in response to a client handshake
+
+///@DefaultCommand
+///.handle = SLIME_HANDLE_HANDSHAKE_R
+///.flags = SLIME_COMMAND_SERVER_SENDS
+typedef struct SLIME_PACKED SlimeHandshakeResponse {
+    /// Should be set to SLIME_HANDSHAKE_RESPONSE_MAGIC
+    uint32_t magic;
+    
+} SlimeHandshakeResponse;
+
+/// Value of SlimeHandshakeResponse.magic
+const uint32_t SLIME_HANDSHAKE_RESPONSE_MAGIC = 1029226168;
+
+
+/// Command descriptors are sent by the tracker following the handshake.
+
+///@DefaultCommand
+///.handle = SLIME_HANDLE_CMD_DESC
+///.flags = SLIME_COMMAND_CLIENT_SENDS
+typedef struct SLIME_PACKED SlimeCommandDescriptor {
+    /// An identifier for the command, used by the server to look up and find
+    /// the correct handler for this command type. This is similar to the idea
+    /// of a packet type in the old protocol, except there are now 128-bits
+    /// and a simple process to generate new ones.
+    SlimeUUID uuid;
+
+    /// Responsibilities associated with the command.
+    SlimeCommandFlagBits flags;
+
+    /// The handle value that is being assigned, and will be used from now
+    /// on to represent this command by either side.
+    SlimeHandle assigned_handle;
+} SlimeCommandDescriptor;
+
+
+
+/// Upon receiving such a descriptor, the server must respond acknowledging
+/// that the descriptor was successfully received:
+
+///@DefaultCommand
+///.handle = SLIME_HANDLE_CMD_DESC_R
+///.flags = SLIME_COMMAND_SERVER_SENDS
+typedef struct SLIME_PACKED SlimeCommandDescriptorResponse {
+    /// The handle value which the client sent
+    SlimeHandle handle;
+
+    /// Status of the descriptor
+    SlimeCommandDescriptorStatus status;
+} SlimeCommandDescriptorResponse;
+
+typedef uint16_t SlimePacketNumber;
+
+///@DefaultCommand
+///.handle = SLIME_HANDLE_PACKET_ACK
+///.flags = SLIME_COMMAND_CLIENT_SENDS | SLIME_COMMAND_SERVER_SENDS
+typedef struct SlimePacketAcknowledgment {
+    SlimePacketNumber packet_number;
+} SlimePacketAcknowledgment;
+
+/*
+// TODO: maybe verification stuff
+void verify_SlimeCommandDescriptor(const SlimeCommandDescriptor *c){
+    assert(
+        (c->uuid.a != 0) && (c->uuid.b != 0) && (c->uuid.c != 0) && (c->uuid.d != 0),
+        "The command descriptor must contain a non-zero UUID"
+    );
+
+    assert(
+        (c->flags & (SLIME_COMMAND_CLIENT_SENDS | SLIME_COMMAND_SERVER_SENDS)) != 0,
+        "The command descriptor flag must have either `SLIME_COMMAND_CLIENT_SENDS` or `SLIME_COMMAND_SERVER_SENDS` set, or both."
+    );
+
+    assert(
+        (c->assigned_handle >= 32),
+        "The command descriptor assigned handle must not be within the reserved space"
+    );
+
+    assert(
+        (c->assigned_handle < 128),
+        "The command descriptor assigned handle must be within the valid space."
+    );
+}
+*/
